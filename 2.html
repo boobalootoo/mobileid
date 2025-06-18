@@ -137,8 +137,6 @@
             margin-bottom: 0;
         }
 
-        /* Removed #results h2 as per request */
-
         /* --- Gallery Specific Styles --- */
         #gallery-section {
             background-color: beige;
@@ -481,7 +479,7 @@
                 <button class="button" onclick="identifySpecies()">IDENTIFY SPECIES</button>
             </div>
             <div id="results">
-                </div>
+            </div>
         </div>
 
         <div class="horizontal-group">
@@ -537,9 +535,11 @@
         const popupCloseBtn = document.getElementById('popup-close-btn');
 
         let currentCameraStream = null;
+        let model; // TensorFlow.js MobileNet model
 
         // Define the path for your GitHub Pages repository
-        const REPO_PATH = '/locationfetcher/'; // IMPORTANT: Update this to your GitHub Pages repository name!
+        // IMPORTANT: Update this to your GitHub Pages repository name!
+        const REPO_PATH = '/mobileid/'; // Changed from '/locationfetcher/' to '/mobileid/'
 
         // --- Helper function to format date for DDMMYYYY ---
         function getFormattedDateDDMMYYYY(dateObj) {
@@ -600,14 +600,16 @@
                 displayStatus("Requesting camera access...", 'darkgreen');
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
-                        facingMode: 'environment'
+                        facingMode: 'environment' // Prioritize rear camera
                     },
                     audio: false
                 });
                 liveCamera.srcObject = stream;
                 currentCameraStream = stream;
-                displayStatus("Camera ready. Capture image!", 'darkgreen');
-                captureButton.disabled = false;
+                liveCamera.onloadedmetadata = () => {
+                    displayStatus("Camera ready. Capture image!", 'darkgreen');
+                    captureButton.disabled = false;
+                };
             } catch (err) {
                 console.error('Camera access failed:', err);
                 displayStatus('Camera access failed: ' + err.message + '. Please allow camera permissions.', 'red');
@@ -709,7 +711,7 @@
                 latitude,
                 longitude,
                 timestamp,
-                filenameText: speciesInput.value.trim() // Use species input as initial filename text
+                filenameText: speciesInput.value.trim() || `Untitled_${getFormattedDateDDMMYYYY()}_${images.length + 1}` // Default filename
             });
             saveCapturedImages(images);
             loadGallery();
@@ -751,12 +753,12 @@
                     latitude,
                     longitude,
                     timestamp,
-                    filenameText: speciesInput.value.trim()
+                    filenameText: speciesInput.value.trim() || file.name.split('.').slice(0, -1).join('.') // Use original filename without extension or species input
                 });
                 saveCapturedImages(images);
                 loadGallery();
-                fileInput.value = '';
-                stopCamera(currentCameraStream);
+                fileInput.value = ''; // Clear the file input
+                stopCamera(currentCameraStream); // Stop camera if file is uploaded
                 liveCamera.srcObject = null;
                 setTimeout(() => {
                     gallery.scrollTop = gallery.scrollHeight;
@@ -851,9 +853,9 @@
                         if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
                             isSwiping = true;
                             imgContainer.style.transform = `translateX(${diffX}px)`;
-                            e.preventDefault();
+                            e.preventDefault(); // Prevent scrolling if swiping horizontally
                         } else if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 10) {
-                            imgContainer.style.transform = initialTransform;
+                            imgContainer.style.transform = initialTransform; // Reset if vertical scroll is dominant
                             isSwiping = false;
                         }
                     });
@@ -871,14 +873,14 @@
                                 imgContainer.style.transform = `translateX(${imgContainer.offsetWidth + 50}px)`;
                                 setTimeout(async () => {
                                     await uploadIndividualImage(index);
-                                    imgContainer.style.transform = initialTransform;
+                                    // No need to reset transform here, item will be re-rendered by loadGallery()
                                 }, 300);
                             } else if (swipeDistance < -swipeThreshold) {
                                 displayFloatingMessage('Deleting...', 'red');
                                 imgContainer.style.transform = `translateX(-${imgContainer.offsetWidth + 50}px)`;
                                 setTimeout(async () => {
                                     await deleteImage(index);
-                                    imgContainer.style.transform = initialTransform;
+                                    // No need to reset transform here, item will be re-rendered by loadGallery()
                                 }, 300);
                             } else {
                                 imgContainer.style.transform = initialTransform;
@@ -888,7 +890,6 @@
                         }
                         isSwiping = false;
                     });
-
                     gallery.appendChild(imgContainer);
                 });
                 submitAllButton.disabled = false;
@@ -896,354 +897,112 @@
             }
         }
 
-        // --- Delete Individual Image from Gallery ---
-        async function deleteImage(index) {
-            if (!confirm("Are you sure you want to delete this photo from saved?")) {
-                const item = gallery.querySelector(`[data-index="${index}"]`);
-                if (item) item.style.transform = `translateX(0px)`;
-                displayFloatingMessage("Deletion cancelled.", "orange");
-                return;
-            }
-
-            let images = getCapturedImages();
-            if (index > -1 && index < images.length) {
-                images.splice(index, 1);
-                saveCapturedImages(images);
-                displayFloatingMessage("Photo deleted successfully.", "darkgreen");
-                loadGallery();
-            } else {
-                displayFloatingMessage("Error: Photo not found.", "red");
+        // --- Identify Species (using MobileNet) ---
+        async function loadModel() {
+            displayStatus("Loading AI model...", 'darkgreen');
+            try {
+                model = await mobilenet.load();
+                displayStatus("AI model loaded. Ready for identification.", 'darkgreen');
+                // Kick off camera after model is loaded
+                startCamera();
+            } catch (error) {
+                console.error("Failed to load MobileNet model:", error);
+                displayStatus("Failed to load AI model. Please check your internet connection.", 'red');
             }
         }
 
-        // --- Upload Individual Image from Gallery ---
-        async function uploadIndividualImage(index) {
-            const images = getCapturedImages();
-            if (index < 0 || index >= images.length) {
-                displayFloatingMessage("Error: Photo not found for upload.", "red");
+        async function identifySpecies(imageData = null, targetResultsDiv = resultsDiv, targetInputField = speciesInput) {
+            if (!model) {
+                displayStatus("AI model not loaded yet. Please wait.", 'orange');
+                await loadModel(); // Try loading if not loaded
+                if (!model) return; // If still not loaded, return
+            }
+
+            displayStatus("Identifying species...", 'darkgreen');
+            targetResultsDiv.innerHTML = ''; // Clear previous results
+            targetResultsDiv.style.display = 'block'; // Ensure the container is visible
+
+            let imgElement;
+            if (imageData) {
+                imgElement = new Image();
+                imgElement.src = imageData;
+                await new Promise(resolve => imgElement.onload = resolve); // Ensure image is loaded
+            } else if (liveCamera.srcObject) { // If live camera is active, use it
+                canvas.width = liveCamera.videoWidth;
+                canvas.height = liveCamera.videoHeight;
+                canvas.getContext('2d').drawImage(liveCamera, 0, 0, canvas.width, canvas.height);
+                imgElement = canvas;
+            } else if (getCapturedImages().length > 0) { // Fallback to the latest captured image if no live feed/file
+                const images = getCapturedImages();
+                imgElement = new Image();
+                imgElement.src = images[images.length - 1].imageData;
+                await new Promise(resolve => imgElement.onload = resolve);
+            } else {
+                displayStatus("No image source available for identification.", 'red');
                 return;
             }
-
-            const imgObj = images[index];
-            const base64Data = imgObj.imageData.split(',')[1];
-
-            let filenamePrefix = imgObj.filenameText ? imgObj.filenameText.trim() : '';
-            if (!filenamePrefix) {
-                filenamePrefix = speciesInput.value.trim();
-            }
-            if (!filenamePrefix) {
-                filenamePrefix = 'unidentified_species';
-            }
-            filenamePrefix = filenamePrefix.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '');
-
-            const dateObj = imgObj.timestamp ? new Date(imgObj.timestamp) : new Date();
-            const datePart = getFormattedDateDDMMYYYY(dateObj);
-
-            let coordPart = '';
-            if (imgObj.latitude !== null && imgObj.longitude !== null) {
-                const cleanLat = String(imgObj.latitude).replace(/[^0-9.-]/g, '');
-                const cleanLon = String(imgObj.longitude).replace(/[^0-9.-]/g, '');
-                coordPart = `_Lat${cleanLat}_Lon${cleanLon}`;
-            }
-
-            const newFileName = `${filenamePrefix}_${datePart}${coordPart}.jpeg`;
-
-            displayStatus(`Uploading photo: '${newFileName}'...`, 'darkgreen');
-
-            submitAllButton.disabled = true;
-            clearSavedButton.disabled = true;
-            captureButton.disabled = true;
-            fileInput.disabled = true;
-            document.querySelectorAll('.filename-input, .identify-item-btn').forEach(input => input.disabled = true);
 
             try {
-                const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    body: new URLSearchParams({
-                        image: base64Data,
-                        mimetype: 'image/jpeg',
-                        filename: newFileName
-                    })
-                });
+                const predictions = await model.classify(imgElement);
+                if (predictions && predictions.length > 0) {
+                    const ul = document.createElement('ul');
+                    predictions.forEach(p => {
+                        const li = document.createElement('li');
+                        const predictionText = document.createElement('span');
+                        predictionText.className = 'prediction-text';
+                        predictionText.textContent = `${p.className} (${(p.probability * 100).toFixed(2)}%)`;
+                        
+                        const actionsDiv = document.createElement('div');
+                        actionsDiv.className = 'prediction-actions';
 
-                const result = await response.json();
-                if (result.status === "success") {
-                    displayFloatingMessage(`Photo '${newFileName}' uploaded successfully!`, 'darkgreen');
-                    let updatedImages = getCapturedImages();
-                    updatedImages.splice(index, 1);
-                    saveCapturedImages(updatedImages);
-                    loadGallery();
-                } else {
-                    displayFloatingMessage(`Failed to upload '${newFileName}': ${result.message || 'Unknown error'}`, 'red');
-                }
-            } catch (error) {
-                displayFloatingMessage(`Network error uploading '${newFileName}': ${error.message}`, 'red');
-            } finally {
-                if (currentCameraStream) {
-                    captureButton.disabled = false;
-                }
-                fileInput.disabled = false;
-                loadGallery();
-            }
-        }
+                        const tickBtn = document.createElement('button');
+                        tickBtn.className = 'prediction-action-btn tick';
+                        tickBtn.textContent = '✔️';
+                        tickBtn.title = `Accept "${p.className}"`;
+                        tickBtn.onclick = () => {
+                            targetInputField.value = p.className;
+                            displayFloatingMessage(`Accepted: ${p.className}`, 'darkgreen');
+                            targetResultsDiv.style.display = 'none'; // Hide results after selection
+                        };
+                        actionsDiv.appendChild(tickBtn);
 
-        // --- Upload All Saved Images from Gallery ---
-        submitAllButton.onclick = async () => {
-            const imagesToUpload = getCapturedImages();
-            if (imagesToUpload.length === 0) {
-                displayFloatingMessage("No photos to upload.", 'orange');
-                return;
-            }
+                        const crossBtn = document.createElement('button');
+                        crossBtn.className = 'prediction-action-btn cross';
+                        crossBtn.textContent = '❌';
+                        crossBtn.title = 'Dismiss';
+                        crossBtn.onclick = () => {
+                            li.remove(); // Remove this prediction
+                            if (ul.children.length === 0) {
+                                targetResultsDiv.style.display = 'none'; // Hide container if no predictions left
+                            }
+                        };
+                        actionsDiv.appendChild(crossBtn);
 
-            submitAllButton.disabled = true;
-            clearSavedButton.disabled = true;
-            captureButton.disabled = true;
-            fileInput.disabled = true;
-            document.querySelectorAll('.filename-input, .identify-item-btn').forEach(input => input.disabled = true);
+                        li.appendChild(predictionText);
+                        li.appendChild(actionsDiv);
+                        
+                        ul.appendChild(li);
 
-            displayStatus(`Uploading ${imagesToUpload.length} photo(s)...`, 'darkgreen');
-
-            let successfulUploads = 0;
-            let failedUploads = 0;
-            const uploadedImageIndices = new Set();
-
-            for (let i = 0; i < imagesToUpload.length; i++) {
-                const imgObj = imagesToUpload[i];
-                const base64Data = imgObj.imageData.split(',')[1];
-
-                let filenamePrefix = imgObj.filenameText ? imgObj.filenameText.trim() : '';
-                if (!filenamePrefix) {
-                    filenamePrefix = speciesInput.value.trim();
-                }
-                if (!filenamePrefix) {
-                    filenamePrefix = 'unidentified_species';
-                }
-                filenamePrefix = filenamePrefix.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '');
-
-                const dateObj = imgObj.timestamp ? new Date(imgObj.timestamp) : new Date();
-                const datePart = getFormattedDateDDMMYYYY(dateObj);
-
-                let coordPart = '';
-                if (imgObj.latitude !== null && imgObj.longitude !== null) {
-                    const cleanLat = String(imgObj.latitude).replace(/[^0-9.-]/g, '');
-                    const cleanLon = String(imgObj.longitude).replace(/[^0-9.-]/g, '');
-                    coordPart = `_Lat${cleanLat}_Lon${cleanLon}`;
-                }
-
-                const newFileName = `${filenamePrefix}_${datePart}${coordPart}.jpeg`;
-
-                try {
-                    displayStatus(`Uploading photo ${i + 1}/${imagesToUpload.length}: '${newFileName}'...`, 'darkgreen');
-                    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                        body: new URLSearchParams({
-                            image: base64Data,
-                            mimetype: 'image/jpeg',
-                            filename: newFileName
-                        })
+                        // If it's the main results div, also set the main input field to the top prediction
+                        if (targetResultsDiv === resultsDiv && p === predictions[0]) {
+                            targetInputField.value = p.className;
+                        }
                     });
-
-                    const result = await response.json();
-                    if (result.status === "success") {
-                        successfulUploads++;
-                        uploadedImageIndices.add(i);
-                        console.log(`Uploaded: ${newFileName}, URL: ${result.url}`);
-                    } else {
-                        failedUploads++;
-                        console.error(`Failed to upload ${newFileName}: ${result.message || 'Unknown error'}`);
-                    }
-                } catch (error) {
-                    failedUploads++;
-                    console.error(`Network error uploading ${newFileName}: ${error.message}`);
+                    targetResultsDiv.appendChild(ul);
+                    displayStatus("Identification complete. Review suggestions.", 'darkgreen');
+                } else {
+                    targetResultsDiv.innerHTML = '<p>No clear identification found.</p>';
+                    displayStatus("No clear identification found.", 'orange');
                 }
-            }
-
-            let remainingImages = getCapturedImages();
-            const sortedIndices = Array.from(uploadedImageIndices).sort((a, b) => b - a);
-            for (const index of sortedIndices) {
-                remainingImages.splice(index, 1);
-            }
-            saveCapturedImages(remainingImages);
-            loadGallery();
-
-            let finalMessage = "";
-            if (successfulUploads > 0 && failedUploads === 0) {
-                finalMessage = `All ${successfulUploads} photos uploaded successfully!`;
-                displayFloatingMessage(finalMessage, 'darkgreen');
-            } else if (successfulUploads > 0 && failedUploads > 0) {
-                finalMessage = `${successfulUploads} photos uploaded, ${failedUploads} failed.`;
-                displayFloatingMessage(finalMessage, 'orange');
-            } else {
-                finalMessage = `All ${failedUploads} uploads failed.`;
-                displayFloatingMessage(finalMessage, 'red');
-            }
-            displayStatus(finalMessage, successfulUploads > 0 ? 'darkgreen' : 'red');
-
-            if (currentCameraStream) {
-                captureButton.disabled = false;
-            }
-            fileInput.disabled = false;
-        };
-
-        // --- Clear All Saved Images ---
-        clearSavedButton.onclick = () => {
-            if (confirm("Are you sure you want to clear all saved photos? This cannot be undone.")) {
-                localStorage.removeItem('capturedImages');
-                localStorage.removeItem('lastKnownLocation');
-                loadGallery();
-                displayFloatingMessage("All saved photos cleared.", 'orange');
-            }
-        };
-
-        // --- Add New Entry (resets main input area) ---
-        addNewEntryButton.onclick = () => {
-            speciesInput.value = '';
-            resultsDiv.innerHTML = ''; // Clear main results area
-            if (currentCameraStream) {
-                stopCamera(currentCameraStream);
-            }
-            liveCamera.srcObject = null;
-            startCamera();
-            fileInput.value = '';
-            displayStatus("Ready for a new species entry!", 'darkgreen');
-        };
-
-        /**
-         * Identifies species in the provided image data or from the current camera/file input.
-         * Results are displayed in the specified target container.
-         * @param {string} [imageDataUrl=null] - Optional base64 data URL of an image to classify.
-         * @param {HTMLElement} [targetResultsContainer=null] - The HTML element to display results in (e.g., a div below a gallery item).
-         * @param {HTMLInputElement} [targetSpeciesInput=null] - The input field to update when a prediction is accepted.
-         */
-        async function identifySpecies(imageDataUrl = null, targetResultsContainer = null, targetSpeciesInput = null) {
-            const model = await mobilenet.load();
-            const displayTarget = targetResultsContainer || resultsDiv; // Use the specific container or main results div
-            displayTarget.innerHTML = ''; // Clear previous results
-            displayTarget.style.display = 'block'; // Ensure container is visible
-
-            displayStatus("Loading AI model and predicting...", 'darkgreen');
-
-            let imgForPrediction = null;
-
-            if (imageDataUrl) {
-                imgForPrediction = document.createElement('img');
-                imgForPrediction.src = imageDataUrl;
-            } else if (fileInput.files.length > 0) {
-                const file = fileInput.files[0];
-                imgForPrediction = document.createElement('img');
-                imgForPrediction.src = await new Promise(resolve => {
-                    const reader = new FileReader();
-                    reader.onload = e => resolve(e.target.result);
-                    reader.readAsDataURL(file);
-                });
-            } else if (liveCamera.srcObject && liveCamera.videoWidth > 0 && liveCamera.videoHeight > 0) {
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = liveCamera.videoWidth;
-                tempCanvas.height = liveCamera.videoHeight;
-                tempCanvas.getContext('2d').drawImage(liveCamera, 0, 0, tempCanvas.width, tempCanvas.height);
-                imgForPrediction = document.createElement('img');
-                imgForPrediction.src = tempCanvas.toDataURL('image/jpeg');
-            } else {
-                displayFloatingMessage("Please capture an image or select a file for AI prediction.", "red");
-                displayStatus("No image available for AI prediction.", 'red');
-                return;
-            }
-
-            try {
-                await imgForPrediction.decode();
-                const predictions = await model.classify(imgForPrediction);
-
-                const ul = document.createElement('ul');
-                displayTarget.appendChild(document.createElement('h3')).textContent = 'AI PREDICTION:';
-                displayTarget.appendChild(ul);
-
-                predictions.forEach(prediction => {
-                    const listItem = document.createElement('li');
-                    
-                    const predictionTextSpan = document.createElement('span');
-                    predictionTextSpan.className = 'prediction-text';
-                    predictionTextSpan.innerHTML = `<strong>${prediction.className}</strong> - ${(prediction.probability * 100).toFixed(2)}%`;
-                    
-                    const actionButtonsDiv = document.createElement('div');
-                    actionButtonsDiv.className = 'prediction-actions';
-
-                    const tickBtn = document.createElement('button');
-                    tickBtn.className = 'prediction-action-btn tick';
-                    tickBtn.textContent = '✔️'; // Unicode checkmark
-                    tickBtn.title = `Use "${prediction.className}"`;
-                    tickBtn.onclick = (e) => {
-                        e.stopPropagation(); // Prevent li click
-                        if (targetSpeciesInput) {
-                            targetSpeciesInput.value = prediction.className;
-                            displayFloatingMessage(`'${prediction.className}' inserted!`, 'darkgreen');
-                            // Optionally, hide predictions after selection
-                            // displayTarget.style.display = 'none';
-                        }
-                    };
-
-                    const crossBtn = document.createElement('button');
-                    crossBtn.className = 'prediction-action-btn cross';
-                    crossBtn.textContent = '❌'; // Unicode cross mark
-                    crossBtn.title = `Dismiss "${prediction.className}"`;
-                    crossBtn.onclick = (e) => {
-                        e.stopPropagation(); // Prevent li click
-                        listItem.remove(); // Remove this prediction item
-                        if (ul.children.length === 0) {
-                             displayTarget.style.display = 'none'; // Hide container if no predictions left
-                        }
-                    };
-
-                    actionButtonsDiv.appendChild(tickBtn);
-                    actionButtonsDiv.appendChild(crossBtn);
-
-                    listItem.appendChild(predictionTextSpan);
-                    listItem.appendChild(actionButtonsDiv);
-
-                    // Add click listener for the pop-up
-                    listItem.onclick = () => displayPredictionPopup(prediction.className);
-
-                    ul.appendChild(listItem);
-                });
-                displayStatus("AI prediction complete!", 'darkgreen');
             } catch (error) {
-                displayTarget.innerHTML = '<p style="color: red; text-align: center;">AI prediction failed.</p>';
-                displayStatus("AI prediction failed.", 'red');
-                console.error('AI prediction error:', error);
+                console.error("Error during identification:", error);
+                targetResultsDiv.innerHTML = '<p>Error during identification.</p>';
+                displayStatus("Error during identification.", 'red');
             }
         }
 
-        // --- Draggable Prediction Pop-up Logic ---
-        let isDragging = false;
-        let offset = { x: 0, y: 0 };
 
-        popupHeader.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            offset = {
-                x: predictionPopup.offsetLeft - e.clientX,
-                y: predictionPopup.offsetTop - e.clientY
-            };
-            predictionPopup.style.cursor = 'grabbing';
-        });
-
-        document.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            e.preventDefault();
-            predictionPopup.style.left = (e.clientX + offset.x) + 'px';
-            predictionPopup.style.top = (e.clientY + offset.y) + 'px';
-        });
-
-        document.addEventListener('mouseup', () => {
-            isDragging = false;
-            predictionPopup.style.cursor = 'grab';
-        });
-
-        popupCloseBtn.onclick = () => {
-            predictionPopup.style.display = 'none';
-        };
-
-        // --- Display Prediction Pop-up (with placeholder content) ---
+        // --- Display Prediction Pop-up (with placeholder content, Google Search calls removed) ---
         async function displayPredictionPopup(speciesName) {
             popupTitle.textContent = speciesName;
             popupImage.src = ''; // Clear previous image
@@ -1254,51 +1013,189 @@
             displayStatus(`Fetching info for ${speciesName}...`, 'darkgreen');
 
             try {
-                // Use Google Search for image and description. This is a placeholder and has limitations.
-                // A robust solution would use a dedicated API (e.g., Wikipedia, specific biodiversity APIs).
-                const searchQuery = `${speciesName} species`;
-                const imageResult = await Google Search(queries=[`${searchQuery} image`]);
-                const descriptionResult = await Google Search(queries=[`${searchQuery} description`]);
+                // Placeholder for an image (you could use a generic "no image" placeholder or a specific image if you have one locally)
+                // Using a generic placeholder for demonstration without external API calls
+                const imageUrl = `https://via.placeholder.com/200x150?text=Image+of+${encodeURIComponent(speciesName)}`;
+                
+                // Placeholder for a description
+                const descriptionText = `This is a placeholder description for ${speciesName}. In a real application, this would come from an external API like Wikipedia or a scientific database.`;
 
-                let imageUrl = '';
-                let descriptionText = 'No detailed description available.';
-
-                if (imageResult && imageResult.results && imageResult.results.length > 0) {
-                    // Try to find a direct image URL
-                    const firstImage = imageResult.results.find(res => res.url && (res.url.endsWith('.jpg') || res.url.endsWith('.png') || res.url.endsWith('.jpeg')));
-                    if (firstImage) {
-                         imageUrl = firstImage.url;
-                    } else if (imageResult.results[0].url) {
-                        // Fallback to the first URL, might not be an image
-                        imageUrl = imageResult.results[0].url;
-                    }
-                }
-
-                if (descriptionResult && descriptionResult.results && descriptionResult.results.length > 0) {
-                    // Try to extract a concise description from the first result's snippet
-                    descriptionText = descriptionResult.results[0].snippet || 'No detailed description available.';
-                }
-
-                popupImage.src = imageUrl || 'https://via.placeholder.com/200x150?text=Image+Not+Found'; // Placeholder if no image found
+                popupImage.src = imageUrl;
                 popupDescription.textContent = descriptionText;
                 displayStatus(`Info for ${speciesName} loaded!`, 'darkgreen');
 
             } catch (error) {
-                console.error("Error fetching prediction details:", error);
-                popupDescription.textContent = 'Failed to load details. Network error or API issue.';
+                console.error("Error fetching prediction details (using placeholders):", error);
+                popupDescription.textContent = 'Failed to load details. (Placeholder content).';
                 popupImage.src = 'https://via.placeholder.com/200x150?text=Error';
                 displayStatus("Failed to load prediction details.", 'red');
             }
         }
 
-        // --- Initial Load ---
-        document.addEventListener('DOMContentLoaded', () => {
-            captureButton.disabled = true;
-            submitAllButton.disabled = true;
-            clearSavedButton.disabled = true;
-            startCamera();
-            loadGallery();
+        // Draggable Pop-up Logic
+        let isDragging = false;
+        let offsetX, offsetY;
+
+        popupHeader.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            offsetX = e.clientX - predictionPopup.getBoundingClientRect().left;
+            offsetY = e.clientY - predictionPopup.getBoundingClientRect().top;
+            predictionPopup.style.cursor = 'grabbing';
         });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            predictionPopup.style.left = (e.clientX - offsetX) + 'px';
+            predictionPopup.style.top = (e.clientY - offsetY) + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            predictionPopup.style.cursor = 'grab';
+        });
+
+        // Close pop-up
+        popupCloseBtn.onclick = () => {
+            predictionPopup.style.display = 'none';
+        };
+
+
+        // --- Google Apps Script (GAS) Web App Submission ---
+        async function submitDataToGAS(data) {
+            try {
+                displayStatus("Submitting data...", 'darkgreen');
+                const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Important for GAS Web Apps
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data),
+                });
+                // Due to 'no-cors' mode, we can't inspect the response directly.
+                // Assume success if no network error.
+                displayStatus("Data submitted successfully (check Google Sheet).", 'darkgreen');
+                displayFloatingMessage("Upload Complete!", 'darkgreen');
+                return true;
+            } catch (error) {
+                console.error("Error submitting to Google Apps Script:", error);
+                displayStatus("Failed to submit data. Check console for details.", 'red');
+                displayFloatingMessage("Upload Failed!", 'red');
+                return false;
+            }
+        }
+
+        // --- Individual Image Upload ---
+        async function uploadIndividualImage(index) {
+            const images = getCapturedImages();
+            if (index < 0 || index >= images.length) {
+                console.error("Invalid image index for upload:", index);
+                displayStatus("Error: Image not found for upload.", 'red');
+                return;
+            }
+
+            const imgObj = images[index];
+            const dataToSubmit = {
+                image: imgObj.imageData.split(',')[1], // Send base64 data without prefix
+                filename: imgObj.filenameText || `Image_${getFormattedDateDDMMYYYY(new Date(imgObj.timestamp))}`,
+                timestamp: imgObj.timestamp,
+                latitude: imgObj.latitude,
+                longitude: imgObj.longitude
+            };
+
+            const success = await submitDataToGAS(dataToSubmit);
+            if (success) {
+                // If single upload successful, remove that item from local storage
+                images.splice(index, 1);
+                saveCapturedImages(images);
+                loadGallery(); // Re-render gallery
+            }
+        }
+
+        // --- Delete Image from Gallery ---
+        async function deleteImage(index) {
+            let images = getCapturedImages();
+            if (index > -1 && index < images.length) {
+                images.splice(index, 1); // Remove the item at the given index
+                saveCapturedImages(images);
+                loadGallery(); // Reload the gallery to reflect the change
+                displayFloatingMessage("Photo deleted!", 'darkgreen');
+            } else {
+                console.error("Attempted to delete an invalid image index:", index);
+            }
+        }
+
+        // --- Add New Entry (placeholder for manual input) ---
+        addNewEntryButton.onclick = () => {
+            const images = getCapturedImages();
+            images.push({
+                imageData: '', // No image for manual entry
+                latitude: getLastKnownLocation() ? getLastKnownLocation().latitude : null,
+                longitude: getLastKnownLocation() ? getLastKnownLocation().longitude : null,
+                timestamp: new Date().toISOString(),
+                filenameText: speciesInput.value.trim() || `Manual_Entry_${getFormattedDateDDMMYYYY()}_${images.length + 1}`
+            });
+            saveCapturedImages(images);
+            loadGallery();
+            setTimeout(() => {
+                gallery.scrollTop = gallery.scrollHeight;
+            }, 100);
+            displayFloatingMessage("New manual entry added!", 'darkgreen');
+        };
+
+        // --- Submit All Saved Images ---
+        submitAllButton.onclick = async () => {
+            const images = getCapturedImages();
+            if (images.length === 0) {
+                displayStatus("No saved photos to submit.", 'orange');
+                return;
+            }
+
+            displayStatus(`Submitting ${images.length} photos...`, 'darkgreen');
+            let allSuccess = true;
+            for (let i = 0; i < images.length; i++) {
+                const imgObj = images[i];
+                const dataToSubmit = {
+                    image: imgObj.imageData ? imgObj.imageData.split(',')[1] : '', // Send base64 data or empty
+                    filename: imgObj.filenameText || `Image_${getFormattedDateDDMMYYYY(new Date(imgObj.timestamp))}`,
+                    timestamp: imgObj.timestamp,
+                    latitude: imgObj.latitude,
+                    longitude: imgObj.longitude
+                };
+                const success = await submitDataToGAS(dataToSubmit);
+                if (!success) {
+                    allSuccess = false;
+                    displayStatus(`Failed to submit photo ${i + 1}.`, 'red');
+                    break; // Stop if any submission fails
+                }
+            }
+
+            if (allSuccess) {
+                localStorage.removeItem('capturedImages'); // Clear all after successful submission
+                loadGallery(); // Update gallery
+                displayStatus("All saved photos submitted and cleared!", 'darkgreen');
+            } else {
+                displayStatus("Some photos failed to submit. Please check your network.", 'red');
+            }
+        };
+
+        // --- Clear All Saved Images ---
+        clearSavedButton.onclick = () => {
+            if (confirm("Are you sure you want to clear ALL saved photos? This action cannot be undone.")) {
+                localStorage.removeItem('capturedImages');
+                loadGallery();
+                displayStatus("All saved photos cleared.", 'darkgreen');
+                displayFloatingMessage("All Photos Cleared!", 'red');
+            }
+        };
+
+        // --- Initial Load ---
+        window.addEventListener('load', () => {
+            loadModel(); // Load TensorFlow model
+            loadGallery(); // Load saved images into gallery
+            // Camera will be started after model loads
+        });
+
     </script>
 </body>
 </html>
