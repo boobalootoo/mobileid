@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Species Identification with Offline Camera & Location</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.2.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Silkscreen', cursive;
+            background-color: skyblue;
+            color: forestgreen;
+            text-align: center;
+            margin: 0;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 90%;
+            max-width: 500px;
+            padding: 0;
+            background-color: beige;
+            border: 8px solid forestgreen;
+            border-radius: 0;
+            margin-bottom: 20px;
+        }
+
+        .horizontal-group {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: stretch;
+            width: 100%;
+            margin-bottom: 0;
+        }
+
+        input[type="file"],
+        button,
+        input[type="text"] {
+            font-family: 'Silkscreen', cursive;
+            color: forestgreen;
+            border: 6px solid forestgreen;
+            padding: 12px;
+            margin: 0;
+            border-radius: 0;
+            position: relative;
+            z-index: 1;
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        .horizontal-group > input[type="file"],
+        .horizontal-group > button,
+        .horizontal-group > input[type="text"] {
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .horizontal-group > *:not(:first-child) {
+            margin-left: -6px;
+        }
+
+        .input-group {
+            width: 100%;
+            margin-bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .button {
+            background: #9CAF88;
+            cursor: pointer;
+            font-size: 18px;
+            transition: background 0.3s ease;
+        }
+
+        .button:hover {
+            background: #B2D8B2;
+        }
+
+        input[type="text"],
+        input[type="file"] {
+            background: #E8E2D6;
+        }
+
+        .video-container {
+            width: 100%;
+            max-width: unset;
+            overflow: hidden;
+            border: 6px solid forestgreen;
+            border-radius: 0;
+            margin: 0 auto 0 auto;
+        }
+
+        .liveCamera {
+            display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 0;
+        }
+
+        .canvas {
+            display: none;
+        }
+
+        .status {
+            color: darkgreen;
+            margin-top: 0;
+            font-size: 16px;
+            margin-bottom: 0;
+            width: 100%;
+        }
+
+        #results {
+            margin-top: 0;
+            border-top: 2px solid forestgreen;
+            padding-top: 0;
+            text-align: left;
+            width: 100%;
+            margin-bottom: 0;
+        }
+
+        #results h2 {
+            text-align: center;
+            margin-bottom: 0;
+        }
+
+        /* --- Gallery Specific Styles --- */
+        #gallery-section {
+            background-color: beige;
+            border: 8px solid forestgreen;
+            width: 90%;
+            max-width: 500px;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 0;
+        }
+
+        #gallery-section h2 {
+            font-family: 'Silkscreen', cursive;
+            color: forestgreen;
+            text-align: center;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        #gallery {
+            display: flex;
+            flex-direction: column; /* Changed to column for vertical scrolling */
+            overflow-y: auto; /* Enable vertical scrolling */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            justify-content: flex-start;
+            align-items: center; /* Center items horizontally */
+            padding: 5px;
+            border: 2px dashed forestgreen;
+            min-height: 100px;
+            max-height: 400px; /* Max height for vertical scrolling */
+            border-radius: 0;
+            gap: 15px; /* Space between items vertically */
+            padding-bottom: 15px; /* Ensure scrollbar doesn't hide content */
+        }
+
+        .gallery-item {
+            position: relative;
+            margin: 0;
+            border: 4px solid #9CAF88;
+            border-radius: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #E8E2D6;
+            width: 100%; /* Take full width of gallery */
+            flex-shrink: 0; /* Prevent shrinking */
+            transition: transform 0.2s ease-out; /* For swipe animation */
+        }
+
+        .gallery-item-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            padding: 5px;
+        }
+
+        .gallery-item img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin-bottom: 5px;
+            border: 2px solid forestgreen;
+            border-radius: 0;
+        }
+
+        .item-controls-group {
+            display: flex;
+            width: 100%;
+            /* Make this look like the horizontal-group in the main section */
+            justify-content: center;
+            align-items: stretch;
+            margin-top: 5px; /* Space from image */
+        }
+
+        .item-controls-group > * {
+            flex: 1;
+            min-width: 0; /* Allow items to shrink */
+        }
+
+        .item-controls-group > *:not(:first-child) {
+            margin-left: -6px; /* Overlap borders */
+        }
+
+
+        .filename-input {
+            width: auto; /* Let flex handle width */
+            padding: 0.3rem;
+            border: 2px solid forestgreen;
+            border-radius: 0;
+            font-size: 0.9rem;
+            box-sizing: border-box;
+            z-index: 5;
+            font-family: 'Silkscreen', cursive;
+            background-color: #E8E2D6;
+            color: forestgreen;
+            text-align: center;
+            /* No margin-top/bottom here, managed by parent group */
+        }
+
+        .identify-item-btn {
+            padding: 0.3rem;
+            font-size: 0.9rem;
+            border: 2px solid forestgreen;
+            background-color: #9CAF88;
+            color: forestgreen;
+            border-radius: 0;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        #gallery-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+            width: 100%;
+        }
+
+        #gallery-buttons button {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 6px solid forestgreen;
+            border-radius: 0;
+            margin: 0;
+        }
+
+        #noPhotosMessage {
+            font-family: 'Silkscreen', cursive;
+            color: forestgreen;
+            text-align: center;
+            width: 100%; /* Ensure it centers in flex container */
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            .container {
+                width: 95%;
+            }
+
+            .button {
+                font-size: 16px;
+                padding: 0;
+            }
+
+            input[type="text"],
+            input[type="file"] {
+                padding: 0;
+                font-size: 14px;
+            }
+
+            .status {
+                font-size: 14px;
+            }
+
+            .horizontal-group {
+                flex-direction: column;
+                gap: 0;
+            }
+
+            .horizontal-group > input[type="file"],
+            .horizontal-group > button,
+            .horizontal-group > input[type="text"] {
+                width: 100%;
+                min-width: unset;
+                margin-left: 0;
+                border-radius: 0;
+            }
+
+            #gallery-section {
+                width: 95%;
+            }
+
+            .item-controls-group {
+                flex-direction: column;
+                gap: 0;
+            }
+
+            .item-controls-group > * {
+                width: 100%;
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>SPECIES IDENTIFICATION</h2>
+        <div class="input-group">
+            <div class="video-container">
+                <video id="liveCamera" class="liveCamera" autoplay playsinline></video>
+            </div>
+            <canvas id="canvas" class="canvas"></canvas>
+
+            <div class="horizontal-group">
+                <input type="file" id="fileInput" class="fileInput" accept="image/*">
+                <button id="captureButton" class="button captureButton">CAPTURE IMAGE</button>
+            </div>
+            <p id="status" class="status"></p>
+        </div>
+
+        <div class="input-group">
+            <div class="horizontal-group">
+                <input type="text" id="speciesInput" placeholder="SPECIES YOU THINK IT IS">
+                <button class="button" onclick="identifySpecies()">IDENTIFY SPECIES</button>
+            </div>
+            <div id="results"></div>
+        </div>
+
+        <div class="horizontal-group">
+            <button id="addNewEntryButton" class="button add-row-btn">ADD NEW ENTRY</button>
+            <button id="submitAllButton" class="button submit-btn">SUBMIT ALL SAVED</button>
+        </div>
+    </div>
+
+    <div id="gallery-section">
+        <h2>CAPTURED PHOTOS</h2>
+        <div id="gallery">
+            <p id="noPhotosMessage">No photos captured yet.</p>
+        </div>
+
+        <div id="gallery-buttons">
+            <button id="clearSavedButton" class="button">🗑️ CLEAR ALL SAVED</button>
+        </div>
+    </div>
+
+    <script>
+        // Replace with your actual Google Apps Script Web App URL
+        const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzW8aRLFh9E1WHUuugvvIqOyYBWrMNRmivot0grSBDRb-WX2Se2hCvzIkIdgMaLZG4-8Q/exec"; // Use your actual URL
+
+        const liveCamera = document.getElementById('liveCamera');
+        const canvas = document.getElementById('canvas');
+        const fileInput = document.getElementById('fileInput');
+        const captureButton = document.getElementById('captureButton');
+        const speciesInput = document.getElementById('speciesInput');
+        const statusDisplay = document.getElementById('status');
+        const resultsDiv = document.getElementById('results');
+
+        const gallery = document.getElementById('gallery');
+        const noPhotosMessage = document.getElementById('noPhotosMessage');
+        const submitAllButton = document.getElementById('submitAllButton');
+        const clearSavedButton = document.getElementById('clearSavedButton');
+        const addNewEntryButton = document.getElementById('addNewEntryButton');
+
+        let currentCameraStream = null;
+
+        // Define the path for your GitHub Pages repository
+        const REPO_PATH = '/locationfetcher/'; // IMPORTANT: Update this to your GitHub Pages repository name!
+
+        // --- Helper function to format date for DDMMYYYY ---
+        function getFormattedDateDDMMYYYY(dateObj) {
+            const now = dateObj || new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const year = now.getFullYear();
+            return `${day}${month}${year}`;
+        }
+
+        // --- Local Storage Management ---
+        function getCapturedImages() {
+            try {
+                return JSON.parse(localStorage.getItem('capturedImages') || '[]');
+            } catch (e) {
+                console.error("Error parsing captured images from localStorage:", e);
+                return [];
+            }
+        }
+
+        function saveCapturedImages(images) {
+            localStorage.setItem('capturedImages', JSON.stringify(images));
+        }
+
+        function getLastKnownLocation() {
+            try {
+                return JSON.parse(localStorage.getItem('lastKnownLocation'));
+            } catch (e) {
+                console.error("Error parsing lastKnownLocation from localStorage:", e);
+                return null;
+            }
+        }
+
+        function saveLastKnownLocation(location) {
+            localStorage.setItem('lastKnownLocation', JSON.stringify(location));
+        }
+
+        // --- Service Worker Registration ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register(REPO_PATH + 'service-worker.js', { scope: REPO_PATH })
+                    .then(registration => {
+                        console.log('Service Worker registered with scope:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.error('Service Worker registration failed:', error);
+                        displayStatus('Offline mode may not work: Service Worker failed to register.', 'red');
+                    });
+            });
+        }
+
+        // --- Camera Initialization ---
+        async function startCamera() {
+            if (currentCameraStream) {
+                stopCamera(currentCameraStream);
+            }
+            try {
+                displayStatus("Requesting camera access...", 'darkgreen');
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment'
+                    },
+                    audio: false
+                });
+                liveCamera.srcObject = stream;
+                currentCameraStream = stream;
+                displayStatus("Camera ready. Capture image!", 'darkgreen');
+                captureButton.disabled = false;
+            } catch (err) {
+                console.error('Camera access failed:', err);
+                displayStatus('Camera access failed: ' + err.message + '. Please allow camera permissions.', 'red');
+                captureButton.disabled = true;
+            }
+        }
+
+        function stopCamera(stream) {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        }
+
+        // --- Display Status Messages ---
+        function displayStatus(message, color = "darkgreen") {
+            statusDisplay.innerText = message;
+            statusDisplay.style.color = color;
+        }
+
+        // --- Display Floating Message ---
+        function displayFloatingMessage(message, color = "black") {
+            const messageBox = document.createElement("div");
+            messageBox.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background-color: beige;
+                padding: 15px 25px;
+                border: 4px solid ${color};
+                border-radius: 0;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                z-index: 2000;
+                color: ${color};
+                font-family: 'Silkscreen', cursive;
+                font-size: 18px;
+            `;
+            messageBox.innerText = message;
+            document.body.appendChild(messageBox);
+            setTimeout(() => {
+                document.body.removeChild(messageBox);
+            }, 3000);
+        }
+
+        // --- Capture Photo and Save to Gallery ---
+        captureButton.onclick = async () => {
+            captureButton.disabled = true;
+            displayStatus("Capturing photo and getting location...", 'darkgreen');
+
+            canvas.width = liveCamera.videoWidth;
+            canvas.height = liveCamera.videoHeight;
+            canvas.getContext('2d').drawImage(liveCamera, 0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL('image/jpeg', 0.9);
+
+            let latitude = null;
+            let longitude = null;
+            const timestamp = new Date().toISOString();
+
+            if (navigator.geolocation) {
+                try {
+                    const position = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            enableHighAccuracy: true,
+                            timeout: 5000,
+                            maximumAge: 0
+                        });
+                    });
+                    latitude = position.coords.latitude.toFixed(2);
+                    longitude = position.coords.longitude.toFixed(2);
+                    displayStatus(`Photo captured. Lat: ${latitude}, Lon: ${longitude}.`, 'darkgreen');
+                    saveLastKnownLocation({ latitude, longitude });
+
+                } catch (error) {
+                    const lastKnown = getLastKnownLocation();
+                    if (lastKnown) {
+                        latitude = lastKnown.latitude;
+                        longitude = lastKnown.longitude;
+                        displayStatus(`Photo captured. Using last known location: Lat: ${latitude}, Lon: ${longitude}.`, 'orange');
+                    } else if (error.code === error.PERMISSION_DENIED) {
+                        displayStatus('Location access denied. Photo saved without coordinates.', 'orange');
+                    } else {
+                        displayStatus('Getting location timed out. Photo saved without coordinates.', 'orange');
+                    }
+                }
+            } else {
+                const lastKnown = getLastKnownLocation();
+                if (lastKnown) {
+                    latitude = lastKnown.latitude;
+                    longitude = lastKnown.longitude;
+                    displayStatus(`Photo captured. Geolocation not supported. Using last known location: Lat: ${latitude}, Lon: ${longitude}.`, 'orange');
+                } else {
+                    displayStatus("Photo captured. Geolocation not supported and no last known location. Saved without coordinates.", 'orange');
+                }
+            }
+
+            const images = getCapturedImages();
+            images.push({
+                imageData,
+                latitude,
+                longitude,
+                timestamp,
+                filenameText: speciesInput.value.trim() // Use species input as initial filename text
+            });
+            saveCapturedImages(images);
+            loadGallery();
+            captureButton.disabled = false;
+            // Scroll to the new image
+            setTimeout(() => {
+                gallery.scrollTop = gallery.scrollHeight;
+            }, 100);
+        };
+
+        // --- Handle File Select and Save to Gallery ---
+        fileInput.addEventListener('change', async () => {
+            if (!fileInput.files.length) {
+                displayStatus("No file selected.", 'darkgreen');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            displayStatus("Processing file...", 'darkgreen');
+
+            reader.onloadend = async function () {
+                const imageData = reader.result;
+                const lastKnown = getLastKnownLocation();
+                let latitude = null;
+                let longitude = null;
+                if (lastKnown) {
+                    latitude = lastKnown.latitude;
+                    longitude = lastKnown.longitude;
+                    displayStatus(`File selected. Using last known location: Lat: ${latitude}, Lon: ${longitude}.`, 'darkgreen');
+                } else {
+                    displayStatus("File selected. No location data available.", 'orange');
+                }
+
+                const timestamp = new Date().toISOString();
+
+                const images = getCapturedImages();
+                images.push({
+                    imageData: imageData,
+                    latitude,
+                    longitude,
+                    timestamp,
+                    filenameText: speciesInput.value.trim()
+                });
+                saveCapturedImages(images);
+                loadGallery();
+                fileInput.value = '';
+                stopCamera(currentCameraStream);
+                liveCamera.srcObject = null;
+                setTimeout(() => {
+                    gallery.scrollTop = gallery.scrollHeight;
+                }, 100);
+            };
+            reader.readAsDataURL(file);
+        });
+
+
+        // --- Gallery Display ---
+        function loadGallery() {
+            gallery.innerHTML = '';
+            const images = getCapturedImages();
+
+            if (images.length === 0) {
+                noPhotosMessage.classList.remove('hidden');
+                gallery.appendChild(noPhotosMessage);
+                submitAllButton.disabled = true;
+                clearSavedButton.disabled = true;
+            } else {
+                noPhotosMessage.classList.add('hidden');
+                images.forEach((imgObj, index) => {
+                    const imgContainer = document.createElement('div');
+                    imgContainer.className = 'gallery-item';
+                    imgContainer.dataset.index = index;
+
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'gallery-item-content';
+
+                    const img = document.createElement('img');
+                    img.src = imgObj.imageData;
+                    img.alt = `Captured Photo ${index + 1}`;
+                    img.title = `Captured: ${imgObj.timestamp ? new Date(imgObj.timestamp).toLocaleString() : 'N/A'}${imgObj.latitude !== null && imgObj.longitude !== null ? `\nLat: ${imgObj.latitude}, Lon: ${imgObj.longitude}` : ''}`;
+                    contentDiv.appendChild(img);
+
+                    imgContainer.appendChild(contentDiv);
+
+                    // New container for input and button
+                    const itemControlsGroup = document.createElement('div');
+                    itemControlsGroup.className = 'item-controls-group';
+
+                    // Textbox for filename content (species name)
+                    const inputField = document.createElement('input');
+                    inputField.type = 'text';
+                    inputField.className = 'filename-input';
+                    inputField.placeholder = 'SPECIES NAME';
+                    inputField.value = imgObj.filenameText || '';
+                    inputField.oninput = (event) => {
+                        const currentImages = getCapturedImages();
+                        currentImages[index].filenameText = event.target.value;
+                        saveCapturedImages(currentImages);
+                    };
+                    itemControlsGroup.appendChild(inputField);
+
+                    // Identify Species Button
+                    const identifyButton = document.createElement('button');
+                    identifyButton.className = 'button identify-item-btn';
+                    identifyButton.textContent = 'IDENTIFY SPECIES';
+                    identifyButton.onclick = () => identifySpecies(imgObj.imageData);
+                    // Prevent swipe gesture activation when touching the button
+                    identifyButton.addEventListener('touchstart', (e) => e.stopPropagation());
+                    itemControlsGroup.appendChild(identifyButton);
+
+                    imgContainer.appendChild(itemControlsGroup);
+
+                    // --- Swipe Gesture Listeners ---
+                    let startX, startY;
+                    let isSwiping = false;
+                    let initialTransform = '';
+
+                    imgContainer.addEventListener('touchstart', (e) => {
+                        startX = e.touches[0].clientX;
+                        startY = e.touches[0].clientY;
+                        isSwiping = false;
+                        initialTransform = imgContainer.style.transform;
+                        imgContainer.style.transition = 'none';
+                    });
+
+                    imgContainer.addEventListener('touchmove', (e) => {
+                        const currentX = e.touches[0].clientX;
+                        const currentY = e.touches[0].clientY;
+                        const diffX = currentX - startX;
+                        const diffY = currentY - startY;
+
+                        // Check if it's primarily a horizontal swipe
+                        if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
+                            isSwiping = true;
+                            imgContainer.style.transform = `translateX(${diffX}px)`;
+                            e.preventDefault(); // Prevent vertical scrolling while swiping horizontally
+                        } else if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 10) {
+                            // If it's a vertical scroll, allow it and reset any existing transform
+                            imgContainer.style.transform = initialTransform;
+                            isSwiping = false; // Not a swipe
+                        }
+                    });
+
+                    imgContainer.addEventListener('touchend', async (e) => {
+                        const endX = e.changedTouches[0].clientX;
+                        const swipeDistance = endX - startX;
+                        const swipeThreshold = 80;
+
+                        if (isSwiping) {
+                            imgContainer.style.transition = 'transform 0.2s ease-out';
+
+                            if (swipeDistance > swipeThreshold) {
+                                // Swipe Right (Upload)
+                                displayFloatingMessage('Uploading...', 'darkgreen');
+                                imgContainer.style.transform = `translateX(${imgContainer.offsetWidth + 50}px)`;
+                                setTimeout(async () => {
+                                    await uploadIndividualImage(index);
+                                    // Transform will be reset by loadGallery() if successful
+                                    imgContainer.style.transform = initialTransform; // Reset if not successful or for visual consistency
+                                }, 300);
+                            } else if (swipeDistance < -swipeThreshold) {
+                                // Swipe Left (Delete)
+                                displayFloatingMessage('Deleting...', 'red');
+                                imgContainer.style.transform = `translateX(-${imgContainer.offsetWidth + 50}px)`;
+                                setTimeout(async () => {
+                                    await deleteImage(index);
+                                    // Transform will be reset by loadGallery() if successful
+                                    imgContainer.style.transform = initialTransform; // Reset if not successful or for visual consistency
+                                }, 300);
+                            } else {
+                                // Not enough swipe, snap back
+                                imgContainer.style.transform = initialTransform;
+                            }
+                        } else {
+                            // If it was a tap or vertical scroll, ensure no transform is left
+                            imgContainer.style.transform = initialTransform;
+                        }
+                        isSwiping = false;
+                    });
+
+                    gallery.appendChild(imgContainer);
+                });
+                submitAllButton.disabled = false;
+                clearSavedButton.disabled = false;
+            }
+        }
+
+        // --- Delete Individual Image from Gallery ---
+        async function deleteImage(index) {
+            // Confirmation for delete
+            if (!confirm("Are you sure you want to delete this photo from saved?")) {
+                // If cancelled, reset transform of the item if it was moved during swipe
+                const item = gallery.querySelector(`[data-index="${index}"]`);
+                if (item) item.style.transform = `translateX(0px)`;
+                displayFloatingMessage("Deletion cancelled.", "orange");
+                return;
+            }
+
+            let images = getCapturedImages();
+            if (index > -1 && index < images.length) {
+                images.splice(index, 1);
+                saveCapturedImages(images);
+                displayFloatingMessage("Photo deleted successfully.", "darkgreen");
+                loadGallery(); // Reload gallery to reflect changes and re-index items
+            } else {
+                displayFloatingMessage("Error: Photo not found.", "red");
+            }
+        }
+
+        // --- Upload Individual Image from Gallery ---
+        async function uploadIndividualImage(index) {
+            const images = getCapturedImages();
+            if (index < 0 || index >= images.length) {
+                displayFloatingMessage("Error: Photo not found for upload.", "red");
+                return;
+            }
+
+            const imgObj = images[index];
+            const base64Data = imgObj.imageData.split(',')[1];
+
+            let filenamePrefix = imgObj.filenameText ? imgObj.filenameText.trim() : '';
+            if (!filenamePrefix) { // If textbox is empty, use the main species input
+                filenamePrefix = speciesInput.value.trim();
+            }
+            if (!filenamePrefix) { // Fallback if both are empty
+                filenamePrefix = 'unidentified_species';
+            }
+            filenamePrefix = filenamePrefix.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '');
+
+            const dateObj = imgObj.timestamp ? new Date(imgObj.timestamp) : new Date();
+            const datePart = getFormattedDateDDMMYYYY(dateObj);
+
+            let coordPart = '';
+            if (imgObj.latitude !== null && imgObj.longitude !== null) {
+                const cleanLat = String(imgObj.latitude).replace(/[^0-9.-]/g, '');
+                const cleanLon = String(imgObj.longitude).replace(/[^0-9.-]/g, '');
+                coordPart = `_Lat${cleanLat}_Lon${cleanLon}`;
+            }
+
+            const newFileName = `${filenamePrefix}_${datePart}${coordPart}.jpeg`;
+
+            displayStatus(`Uploading photo: '${newFileName}'...`, 'darkgreen');
+
+            // Disable all upload related buttons and textboxes during upload
+            submitAllButton.disabled = true;
+            clearSavedButton.disabled = true;
+            captureButton.disabled = true;
+            fileInput.disabled = true;
+            document.querySelectorAll('.filename-input, .identify-item-btn').forEach(input => input.disabled = true); // Disable textboxes and identify buttons
+
+            try {
+                const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: new URLSearchParams({
+                        image: base64Data,
+                        mimetype: 'image/jpeg',
+                        filename: newFileName
+                    })
+                });
+
+                const result = await response.json();
+                if (result.status === "success") {
+                    displayFloatingMessage(`Photo '${newFileName}' uploaded successfully!`, 'darkgreen');
+                    let updatedImages = getCapturedImages();
+                    updatedImages.splice(index, 1); // Remove the uploaded image
+                    saveCapturedImages(updatedImages);
+                    loadGallery(); // Refresh gallery
+                } else {
+                    displayFloatingMessage(`Failed to upload '${newFileName}': ${result.message || 'Unknown error'}`, 'red');
+                }
+            } catch (error) {
+                displayFloatingMessage(`Network error uploading '${newFileName}': ${error.message}`, 'red');
+            } finally {
+                // Re-enable buttons and textboxes
+                if (currentCameraStream) {
+                    captureButton.disabled = false;
+                }
+                fileInput.disabled = false;
+                loadGallery(); // This will re-enable individual buttons/textboxes if photos remain
+            }
+        }
+
+        // --- Upload All Saved Images from Gallery ---
+        submitAllButton.onclick = async () => {
+            const imagesToUpload = getCapturedImages();
+            if (imagesToUpload.length === 0) {
+                displayFloatingMessage("No photos to upload.", 'orange');
+                return;
+            }
+
+            submitAllButton.disabled = true;
+            clearSavedButton.disabled = true;
+            captureButton.disabled = true;
+            fileInput.disabled = true;
+            document.querySelectorAll('.filename-input, .identify-item-btn').forEach(input => input.disabled = true);
+
+            displayStatus(`Uploading ${imagesToUpload.length} photo(s)...`, 'darkgreen');
+
+            let successfulUploads = 0;
+            let failedUploads = 0;
+            const uploadedImageIndices = new Set();
+
+            for (let i = 0; i < imagesToUpload.length; i++) {
+                const imgObj = imagesToUpload[i];
+                const base64Data = imgObj.imageData.split(',')[1];
+
+                let filenamePrefix = imgObj.filenameText ? imgObj.filenameText.trim() : '';
+                if (!filenamePrefix) { // If individual textbox is empty, use the main species input
+                    filenamePrefix = speciesInput.value.trim();
+                }
+                if (!filenamePrefix) { // Fallback if both are empty
+                    filenamePrefix = 'unidentified_species';
+                }
+                filenamePrefix = filenamePrefix.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '');
+
+                const dateObj = imgObj.timestamp ? new Date(imgObj.timestamp) : new Date();
+                const datePart = getFormattedDateDDMMYYYY(dateObj);
+
+                let coordPart = '';
+                if (imgObj.latitude !== null && imgObj.longitude !== null) {
+                    const cleanLat = String(imgObj.latitude).replace(/[^0-9.-]/g, '');
+                    const cleanLon = String(imgObj.longitude).replace(/[^0-9.-]/g, '');
+                    coordPart = `_Lat${cleanLat}_Lon${cleanLon}`;
+                }
+
+                const newFileName = `${filenamePrefix}_${datePart}${coordPart}.jpeg`;
+
+                try {
+                    displayStatus(`Uploading photo ${i + 1}/${imagesToUpload.length}: '${newFileName}'...`, 'darkgreen');
+                    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: new URLSearchParams({
+                            image: base64Data,
+                            mimetype: 'image/jpeg',
+                            filename: newFileName
+                        })
+                    });
+
+                    const result = await response.json();
+                    if (result.status === "success") {
+                        successfulUploads++;
+                        uploadedImageIndices.add(i);
+                        console.log(`Uploaded: ${newFileName}, URL: ${result.url}`);
+                    } else {
+                        failedUploads++;
+                        console.error(`Failed to upload ${newFileName}: ${result.message || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    failedUploads++;
+                    console.error(`Network error uploading ${newFileName}: ${error.message}`);
+                }
+            }
+
+            let remainingImages = getCapturedImages();
+            const sortedIndices = Array.from(uploadedImageIndices).sort((a, b) => b - a);
+            for (const index of sortedIndices) {
+                remainingImages.splice(index, 1);
+            }
+            saveCapturedImages(remainingImages);
+            loadGallery();
+
+            let finalMessage = "";
+            if (successfulUploads > 0 && failedUploads === 0) {
+                finalMessage = `All ${successfulUploads} photos uploaded successfully!`;
+                displayFloatingMessage(finalMessage, 'darkgreen');
+            } else if (successfulUploads > 0 && failedUploads > 0) {
+                finalMessage = `${successfulUploads} photos uploaded, ${failedUploads} failed.`;
+                displayFloatingMessage(finalMessage, 'orange');
+            } else {
+                finalMessage = `All ${failedUploads} uploads failed.`;
+                displayFloatingMessage(finalMessage, 'red');
+            }
+            displayStatus(finalMessage, successfulUploads > 0 ? 'darkgreen' : 'red');
+
+            if (currentCameraStream) {
+                captureButton.disabled = false;
+            }
+            fileInput.disabled = false;
+        };
+
+        // --- Clear All Saved Images ---
+        clearSavedButton.onclick = () => {
+            if (confirm("Are you sure you want to clear all saved photos? This cannot be undone.")) {
+                localStorage.removeItem('capturedImages');
+                localStorage.removeItem('lastKnownLocation');
+                loadGallery();
+                displayFloatingMessage("All saved photos cleared.", 'orange');
+            }
+        };
+
+        // --- Add New Entry (resets main input area) ---
+        addNewEntryButton.onclick = () => {
+            speciesInput.value = '';
+            resultsDiv.innerHTML = '';
+            if (currentCameraStream) {
+                stopCamera(currentCameraStream);
+            }
+            liveCamera.srcObject = null;
+            startCamera();
+            fileInput.value = '';
+            displayStatus("Ready for a new species entry!", 'darkgreen');
+        };
+
+        /**
+         * Identifies species in the provided image data or from the current camera/file input.
+         * @param {string} [imageDataUrl=null] - Optional base64 data URL of an image to classify.
+         */
+        async function identifySpecies(imageDataUrl = null) {
+            const model = await mobilenet.load();
+            resultsDiv.innerHTML = '<h2>AI SPECIES PREDICTION:</h2>';
+            displayStatus("Loading AI model and predicting...", 'darkgreen');
+
+            let imgForPrediction = null;
+
+            if (imageDataUrl) {
+                // If imageDataUrl is provided (from a gallery item)
+                imgForPrediction = document.createElement('img');
+                imgForPrediction.src = imageDataUrl;
+            } else if (fileInput.files.length > 0) {
+                // If a file is selected in the main input
+                const file = fileInput.files[0];
+                imgForprediction = document.createElement('img');
+                imgForPrediction.src = await new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = e => resolve(e.target.result);
+                    reader.readAsDataURL(file);
+                });
+            } else if (liveCamera.srcObject && liveCamera.videoWidth > 0 && liveCamera.videoHeight > 0) {
+                // If live camera feed is active
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = liveCamera.videoWidth;
+                tempCanvas.height = liveCamera.videoHeight;
+                tempCanvas.getContext('2d').drawImage(liveCamera, 0, 0, tempCanvas.width, tempCanvas.height);
+                imgForPrediction = document.createElement('img');
+                imgForPrediction.src = tempCanvas.toDataURL('image/jpeg');
+            } else {
+                displayFloatingMessage("Please capture an image or select a file for AI prediction.", "red");
+                displayStatus("No image available for AI prediction.", 'red');
+                return;
+            }
+
+            try {
+                await imgForPrediction.decode(); // Ensure image is loaded
+                const predictions = await model.classify(imgForPrediction);
+                resultsDiv.innerHTML += '<ul>';
+                predictions.forEach(prediction => {
+                    const listItem = document.createElement('li');
+                    listItem.innerHTML = `<strong>${prediction.className}</strong> - ${(prediction.probability * 100).toFixed(2)}%`;
+                    resultsDiv.querySelector('ul').appendChild(listItem);
+                });
+                resultsDiv.innerHTML += '</ul>';
+                displayStatus("AI prediction complete!", 'darkgreen');
+            } catch (error) {
+                displayFloatingMessage("Error processing image for AI prediction. Make sure it's a valid image.", "red");
+                displayStatus("AI prediction failed.", 'red');
+                console.error('AI prediction error:', error);
+            }
+        }
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            captureButton.disabled = true;
+            submitAllButton.disabled = true;
+            clearSavedButton.disabled = true;
+            startCamera();
+            loadGallery();
+        });
+    </script>
+</body>
+</html>
