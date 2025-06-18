@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Species Identification with Offline Camera & Location</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.2.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Silkscreen', cursive;
+            background-color: skyblue;
+            color: forestgreen;
+            text-align: center;
+            margin: 0;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 90%;
+            max-width: 500px;
+            padding: 0;
+            background-color: beige;
+            border: 8px solid forestgreen;
+            border-radius: 0;
+            margin-bottom: 20px;
+        }
+
+        .horizontal-group {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: stretch;
+            width: 100%;
+            margin-bottom: 0;
+        }
+
+        input[type="file"],
+        button,
+        input[type="text"] {
+            font-family: 'Silkscreen', cursive;
+            color: forestgreen;
+            border: 6px solid forestgreen;
+            padding: 12px;
+            margin: 0;
+            border-radius: 0;
+            position: relative;
+            z-index: 1;
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        .horizontal-group > input[type="file"],
+        .horizontal-group > button,
+        .horizontal-group > input[type="text"] {
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .horizontal-group > *:not(:first-child) {
+            margin-left: -6px;
+        }
+
+        .input-group {
+            width: 100%;
+            margin-bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .button {
+            background: #9CAF88;
+            cursor: pointer;
+            font-size: 18px;
+            transition: background 0.3s ease;
+        }
+
+        .button:hover {
+            background: #B2D8B2;
+        }
+
+        input[type="text"],
+        input[type="file"] {
+            background: #E8E2D6;
+        }
+
+        .video-container {
+            width: 100%;
+            max-width: unset;
+            overflow: hidden;
+            border: 6px solid forestgreen;
+            border-radius: 0;
+            margin: 0 auto 0 auto;
+        }
+
+        .liveCamera {
+            display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 0;
+        }
+
+        .canvas {
+            display: none;
+        }
+
+        .status {
+            color: darkgreen;
+            margin-top: 0;
+            font-size: 16px;
+            margin-bottom: 0;
+            width: 100%;
+        }
+
+        #results {
+            margin-top: 0;
+            border-top: 2px solid forestgreen;
+            padding-top: 0;
+            text-align: left;
+            width: 100%;
+            margin-bottom: 0;
+        }
+
+        /* Removed #results h2 as per request */
+
+        /* --- Gallery Specific Styles --- */
+        #gallery-section {
+            background-color: beige;
+            border: 8px solid forestgreen;
+            width: 90%;
+            max-width: 500px;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 0;
+        }
+
+        #gallery-section h2 {
+            font-family: 'Silkscreen', cursive;
+            color: forestgreen;
+            text-align: center;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        #gallery {
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            justify-content: flex-start;
+            align-items: center;
+            padding: 5px;
+            border: 2px dashed forestgreen;
+            min-height: 100px;
+            max-height: 400px; /* Max height for vertical scrolling */
+            border-radius: 0;
+            gap: 15px;
+            padding-bottom: 15px;
+        }
+
+        .gallery-item {
+            position: relative;
+            margin: 0;
+            border: 4px solid #9CAF88;
+            border-radius: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #E8E2D6;
+            width: 100%;
+            flex-shrink: 0;
+            transition: transform 0.2s ease-out;
+        }
+
+        .gallery-item-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            padding: 5px;
+        }
+
+        .gallery-item img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin-bottom: 5px;
+            border: 2px solid forestgreen;
+            border-radius: 0;
+        }
+
+        .item-controls-group {
+            display: flex;
+            width: 100%;
+            justify-content: center;
+            align-items: stretch;
+            margin-top: 5px;
+        }
+
+        .item-controls-group > * {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .item-controls-group > *:not(:first-child) {
+            margin-left: -6px;
+        }
+
+        .filename-input {
+            width: auto;
+            padding: 0.3rem;
+            border: 2px solid forestgreen;
+            border-radius: 0;
+            font-size: 0.9rem;
+            box-sizing: border-box;
+            z-index: 5;
+            font-family: 'Silkscreen', cursive;
+            background-color: #E8E2D6;
+            color: forestgreen;
+            text-align: center;
+        }
+
+        .identify-item-btn {
+            padding: 0.3rem;
+            font-size: 0.9rem;
+            border: 2px solid forestgreen;
+            background-color: #9CAF88;
+            color: forestgreen;
+            border-radius: 0;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        /* --- Per-Item Prediction Display --- */
+        .prediction-results-container {
+            width: 100%;
+            border-top: 2px dashed forestgreen;
+            margin-top: 10px;
+            padding-top: 10px;
+            text-align: left;
+            display: none; /* Hidden by default */
+        }
+
+        .prediction-results-container h3 {
+            font-family: 'Silkscreen', cursive;
+            color: darkgreen;
+            text-align: center;
+            margin-top: 0;
+            margin-bottom: 5px;
+            font-size: 1em;
+        }
+
+        .prediction-results-container ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .prediction-results-container li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #F0E8D7;
+            border: 1px solid #D4C9B4;
+            margin-bottom: 5px;
+            padding: 8px;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .prediction-results-container li:hover {
+            background-color: #E8E2D6;
+        }
+
+        .prediction-text {
+            flex-grow: 1;
+            padding-right: 10px;
+            color: forestgreen;
+        }
+
+        .prediction-actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .prediction-action-btn {
+            background: none;
+            border: 2px solid forestgreen;
+            color: forestgreen;
+            padding: 4px 6px;
+            font-size: 0.8em;
+            cursor: pointer;
+            border-radius: 0;
+            font-family: 'Silkscreen', cursive;
+            transition: background-color 0.2s ease;
+        }
+
+        .prediction-action-btn.tick:hover { background-color: #aaffaa; }
+        .prediction-action-btn.cross:hover { background-color: #ffaaaa; }
+
+        /* --- Draggable Pop-up --- */
+        #prediction-popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 400px;
+            background-color: beige;
+            border: 8px solid forestgreen;
+            border-radius: 0;
+            padding: 15px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            z-index: 3000;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            cursor: grab; /* Indicates draggable area */
+        }
+
+        #popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            cursor: move; /* More explicit for dragging */
+        }
+
+        #popup-header h3 {
+            margin: 0;
+            color: forestgreen;
+            font-size: 1.2em;
+        }
+
+        #popup-close-btn {
+            background: #ffaaaa;
+            border: 4px solid forestgreen;
+            color: forestgreen;
+            font-family: 'Silkscreen', cursive;
+            padding: 5px 10px;
+            cursor: pointer;
+            border-radius: 0;
+        }
+
+        #popup-image {
+            max-width: 100%;
+            height: auto;
+            border: 2px solid forestgreen;
+            margin-bottom: 10px;
+            display: block;
+            object-fit: contain; /* Ensures image fits without cropping */
+            background-color: #E8E2D6; /* Placeholder background */
+        }
+
+        #popup-description {
+            color: forestgreen;
+            font-size: 0.9em;
+            text-align: left;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px dashed forestgreen;
+            padding: 5px;
+            background-color: #F0E8D7;
+        }
+
+        #gallery-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+            width: 100%;
+        }
+
+        #gallery-buttons button {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 6px solid forestgreen;
+            border-radius: 0;
+            margin: 0;
+        }
+
+        #noPhotosMessage {
+            font-family: 'Silkscreen', cursive;
+            color: forestgreen;
+            text-align: center;
+            width: 100%;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            .container {
+                width: 95%;
+            }
+
+            .button {
+                font-size: 16px;
+                padding: 0;
+            }
+
+            input[type="text"],
+            input[type="file"] {
+                padding: 0;
+                font-size: 14px;
+            }
+
+            .status {
+                font-size: 14px;
+            }
+
+            .horizontal-group {
+                flex-direction: column;
+                gap: 0;
+            }
+
+            .horizontal-group > input[type="file"],
+            .horizontal-group > button,
+            .horizontal-group > input[type="text"] {
+                width: 100%;
+                min-width: unset;
+                margin-left: 0;
+                border-radius: 0;
+            }
+
+            #gallery-section {
+                width: 95%;
+            }
+
+            .item-controls-group {
+                flex-direction: column;
+                gap: 0;
+            }
+
+            .item-controls-group > * {
+                width: 100%;
+                margin-left: 0;
+            }
+
+            #prediction-popup {
+                width: 95%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>SPECIES IDENTIFICATION</h2>
+        <div class="input-group">
+            <div class="video-container">
+                <video id="liveCamera" class="liveCamera" autoplay playsinline></video>
+            </div>
+            <canvas id="canvas" class="canvas"></canvas>
+
+            <div class="horizontal-group">
+                <input type="file" id="fileInput" class="fileInput" accept="image/*">
+                <button id="captureButton" class="button captureButton">CAPTURE IMAGE</button>
+            </div>
+            <p id="status" class="status"></p>
+        </div>
+
+        <div class="input-group">
+            <div class="horizontal-group">
+                <input type="text" id="speciesInput" placeholder="SPECIES YOU THINK IT IS">
+                <button class="button" onclick="identifySpecies()">IDENTIFY SPECIES</button>
+            </div>
+            <div id="results">
+                </div>
+        </div>
+
+        <div class="horizontal-group">
+            <button id="addNewEntryButton" class="button add-row-btn">ADD NEW ENTRY</button>
+            <button id="submitAllButton" class="button submit-btn">SUBMIT ALL SAVED</button>
+        </div>
+    </div>
+
+    <div id="gallery-section">
+        <h2>CAPTURED PHOTOS</h2>
+        <div id="gallery">
+            <p id="noPhotosMessage">No photos captured yet.</p>
+        </div>
+
+        <div id="gallery-buttons">
+            <button id="clearSavedButton" class="button">🗑️ CLEAR ALL SAVED</button>
+        </div>
+    </div>
+
+    <div id="prediction-popup">
+        <div id="popup-header">
+            <h3 id="popup-title"></h3>
+            <button id="popup-close-btn">X</button>
+        </div>
+        <img id="popup-image" src="" alt="Species Image">
+        <div id="popup-description"></div>
+    </div>
+
+    <script>
+        // Replace with your actual Google Apps Script Web App URL
+        const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzW8aRLFh9E1WHUuugvvIqOyYBWrMNRmivot0grSBDRb-WX2Se2hCvzIkIdgMaLZG4-8Q/exec"; // Use your actual URL
+
+        const liveCamera = document.getElementById('liveCamera');
+        const canvas = document.getElementById('canvas');
+        const fileInput = document.getElementById('fileInput');
+        const captureButton = document.getElementById('captureButton');
+        const speciesInput = document.getElementById('speciesInput');
+        const statusDisplay = document.getElementById('status');
+        const resultsDiv = document.getElementById('results'); // Main AI prediction results
+
+        const gallery = document.getElementById('gallery');
+        const noPhotosMessage = document.getElementById('noPhotosMessage');
+        const submitAllButton = document.getElementById('submitAllButton');
+        const clearSavedButton = document.getElementById('clearSavedButton');
+        const addNewEntryButton = document.getElementById('addNewEntryButton');
+
+        // Pop-up elements
+        const predictionPopup = document.getElementById('prediction-popup');
+        const popupHeader = document.getElementById('popup-header');
+        const popupTitle = document.getElementById('popup-title');
+        const popupImage = document.getElementById('popup-image');
+        const popupDescription = document.getElementById('popup-description');
+        const popupCloseBtn = document.getElementById('popup-close-btn');
+
+        let currentCameraStream = null;
+
+        // Define the path for your GitHub Pages repository
+        const REPO_PATH = '/locationfetcher/'; // IMPORTANT: Update this to your GitHub Pages repository name!
+
+        // --- Helper function to format date for DDMMYYYY ---
+        function getFormattedDateDDMMYYYY(dateObj) {
+            const now = dateObj || new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const year = now.getFullYear();
+            return `${day}${month}${year}`;
+        }
+
+        // --- Local Storage Management ---
+        function getCapturedImages() {
+            try {
+                return JSON.parse(localStorage.getItem('capturedImages') || '[]');
+            } catch (e) {
+                console.error("Error parsing captured images from localStorage:", e);
+                return [];
+            }
+        }
+
+        function saveCapturedImages(images) {
+            localStorage.setItem('capturedImages', JSON.stringify(images));
+        }
+
+        function getLastKnownLocation() {
+            try {
+                return JSON.parse(localStorage.getItem('lastKnownLocation'));
+            } catch (e) {
+                console.error("Error parsing lastKnownLocation from localStorage:", e);
+                return null;
+            }
+        }
+
+        function saveLastKnownLocation(location) {
+            localStorage.setItem('lastKnownLocation', JSON.stringify(location));
+        }
+
+        // --- Service Worker Registration ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register(REPO_PATH + 'service-worker.js', { scope: REPO_PATH })
+                    .then(registration => {
+                        console.log('Service Worker registered with scope:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.error('Service Worker registration failed:', error);
+                        displayStatus('Offline mode may not work: Service Worker failed to register.', 'red');
+                    });
+            });
+        }
+
+        // --- Camera Initialization ---
+        async function startCamera() {
+            if (currentCameraStream) {
+                stopCamera(currentCameraStream);
+            }
+            try {
+                displayStatus("Requesting camera access...", 'darkgreen');
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment'
+                    },
+                    audio: false
+                });
+                liveCamera.srcObject = stream;
+                currentCameraStream = stream;
+                displayStatus("Camera ready. Capture image!", 'darkgreen');
+                captureButton.disabled = false;
+            } catch (err) {
+                console.error('Camera access failed:', err);
+                displayStatus('Camera access failed: ' + err.message + '. Please allow camera permissions.', 'red');
+                captureButton.disabled = true;
+            }
+        }
+
+        function stopCamera(stream) {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        }
+
+        // --- Display Status Messages ---
+        function displayStatus(message, color = "darkgreen") {
+            statusDisplay.innerText = message;
+            statusDisplay.style.color = color;
+        }
+
+        // --- Display Floating Message ---
+        function displayFloatingMessage(message, color = "black") {
+            const messageBox = document.createElement("div");
+            messageBox.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background-color: beige;
+                padding: 15px 25px;
+                border: 4px solid ${color};
+                border-radius: 0;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                z-index: 2000;
+                color: ${color};
+                font-family: 'Silkscreen', cursive;
+                font-size: 18px;
+            `;
+            messageBox.innerText = message;
+            document.body.appendChild(messageBox);
+            setTimeout(() => {
+                document.body.removeChild(messageBox);
+            }, 3000);
+        }
+
+        // --- Capture Photo and Save to Gallery ---
+        captureButton.onclick = async () => {
+            captureButton.disabled = true;
+            displayStatus("Capturing photo and getting location...", 'darkgreen');
+
+            canvas.width = liveCamera.videoWidth;
+            canvas.height = liveCamera.videoHeight;
+            canvas.getContext('2d').drawImage(liveCamera, 0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL('image/jpeg', 0.9);
+
+            let latitude = null;
+            let longitude = null;
+            const timestamp = new Date().toISOString();
+
+            if (navigator.geolocation) {
+                try {
+                    const position = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            enableHighAccuracy: true,
+                            timeout: 5000,
+                            maximumAge: 0
+                        });
+                    });
+                    latitude = position.coords.latitude.toFixed(2);
+                    longitude = position.coords.longitude.toFixed(2);
+                    displayStatus(`Photo captured. Lat: ${latitude}, Lon: ${longitude}.`, 'darkgreen');
+                    saveLastKnownLocation({ latitude, longitude });
+
+                } catch (error) {
+                    const lastKnown = getLastKnownLocation();
+                    if (lastKnown) {
+                        latitude = lastKnown.latitude;
+                        longitude = lastKnown.longitude;
+                        displayStatus(`Photo captured. Using last known location: Lat: ${latitude}, Lon: ${longitude}.`, 'orange');
+                    } else if (error.code === error.PERMISSION_DENIED) {
+                        displayStatus('Location access denied. Photo saved without coordinates.', 'orange');
+                    } else {
+                        displayStatus('Getting location timed out. Photo saved without coordinates.', 'orange');
+                    }
+                }
+            } else {
+                const lastKnown = getLastKnownLocation();
+                if (lastKnown) {
+                    latitude = lastKnown.latitude;
+                    longitude = lastKnown.longitude;
+                    displayStatus(`Photo captured. Geolocation not supported. Using last known location: Lat: ${latitude}, Lon: ${longitude}.`, 'orange');
+                } else {
+                    displayStatus("Photo captured. Geolocation not supported and no last known location. Saved without coordinates.", 'orange');
+                }
+            }
+
+            const images = getCapturedImages();
+            images.push({
+                imageData,
+                latitude,
+                longitude,
+                timestamp,
+                filenameText: speciesInput.value.trim() // Use species input as initial filename text
+            });
+            saveCapturedImages(images);
+            loadGallery();
+            captureButton.disabled = false;
+            setTimeout(() => {
+                gallery.scrollTop = gallery.scrollHeight;
+            }, 100);
+        };
+
+        // --- Handle File Select and Save to Gallery ---
+        fileInput.addEventListener('change', async () => {
+            if (!fileInput.files.length) {
+                displayStatus("No file selected.", 'darkgreen');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            displayStatus("Processing file...", 'darkgreen');
+
+            reader.onloadend = async function () {
+                const imageData = reader.result;
+                const lastKnown = getLastKnownLocation();
+                let latitude = null;
+                let longitude = null;
+                if (lastKnown) {
+                    latitude = lastKnown.latitude;
+                    longitude = lastKnown.longitude;
+                    displayStatus(`File selected. Using last known location: Lat: ${latitude}, Lon: ${longitude}.`, 'darkgreen');
+                } else {
+                    displayStatus("File selected. No location data available.", 'orange');
+                }
+
+                const timestamp = new Date().toISOString();
+
+                const images = getCapturedImages();
+                images.push({
+                    imageData: imageData,
+                    latitude,
+                    longitude,
+                    timestamp,
+                    filenameText: speciesInput.value.trim()
+                });
+                saveCapturedImages(images);
+                loadGallery();
+                fileInput.value = '';
+                stopCamera(currentCameraStream);
+                liveCamera.srcObject = null;
+                setTimeout(() => {
+                    gallery.scrollTop = gallery.scrollHeight;
+                }, 100);
+            };
+            reader.readAsDataURL(file);
+        });
+
+
+        // --- Gallery Display ---
+        function loadGallery() {
+            gallery.innerHTML = '';
+            const images = getCapturedImages();
+
+            if (images.length === 0) {
+                noPhotosMessage.classList.remove('hidden');
+                gallery.appendChild(noPhotosMessage);
+                submitAllButton.disabled = true;
+                clearSavedButton.disabled = true;
+            } else {
+                noPhotosMessage.classList.add('hidden');
+                images.forEach((imgObj, index) => {
+                    const imgContainer = document.createElement('div');
+                    imgContainer.className = 'gallery-item';
+                    imgContainer.dataset.index = index; // Use dataset for index
+
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'gallery-item-content';
+
+                    const img = document.createElement('img');
+                    img.src = imgObj.imageData;
+                    img.alt = `Captured Photo ${index + 1}`;
+                    img.title = `Captured: ${imgObj.timestamp ? new Date(imgObj.timestamp).toLocaleString() : 'N/A'}${imgObj.latitude !== null && imgObj.longitude !== null ? `\nLat: ${imgObj.latitude}, Lon: ${imgObj.longitude}` : ''}`;
+                    contentDiv.appendChild(img);
+
+                    imgContainer.appendChild(contentDiv);
+
+                    const itemControlsGroup = document.createElement('div');
+                    itemControlsGroup.className = 'item-controls-group';
+
+                    const inputField = document.createElement('input');
+                    inputField.type = 'text';
+                    inputField.className = 'filename-input';
+                    inputField.id = `species-input-${index}`; // Unique ID for each input
+                    inputField.placeholder = 'SPECIES NAME';
+                    inputField.value = imgObj.filenameText || '';
+                    inputField.oninput = (event) => {
+                        const currentImages = getCapturedImages();
+                        currentImages[index].filenameText = event.target.value;
+                        saveCapturedImages(currentImages);
+                    };
+                    itemControlsGroup.appendChild(inputField);
+
+                    const identifyButton = document.createElement('button');
+                    identifyButton.className = 'button identify-item-btn';
+                    identifyButton.textContent = 'IDENTIFY SPECIES';
+                    identifyButton.onclick = () => {
+                        const targetResults = document.getElementById(`predictions-${index}`);
+                        const targetInput = document.getElementById(`species-input-${index}`);
+                        identifySpecies(imgObj.imageData, targetResults, targetInput);
+                    };
+                    identifyButton.addEventListener('touchstart', (e) => e.stopPropagation()); // Prevent swipe
+                    itemControlsGroup.appendChild(identifyButton);
+
+                    imgContainer.appendChild(itemControlsGroup);
+
+                    // Per-item prediction results container
+                    const predictionResultsContainer = document.createElement('div');
+                    predictionResultsContainer.className = 'prediction-results-container';
+                    predictionResultsContainer.id = `predictions-${index}`; // Unique ID for each prediction container
+                    imgContainer.appendChild(predictionResultsContainer);
+
+                    // --- Swipe Gesture Listeners ---
+                    let startX, startY;
+                    let isSwiping = false;
+                    let initialTransform = '';
+
+                    imgContainer.addEventListener('touchstart', (e) => {
+                        startX = e.touches[0].clientX;
+                        startY = e.touches[0].clientY;
+                        isSwiping = false;
+                        initialTransform = imgContainer.style.transform;
+                        imgContainer.style.transition = 'none';
+                    });
+
+                    imgContainer.addEventListener('touchmove', (e) => {
+                        const currentX = e.touches[0].clientX;
+                        const currentY = e.touches[0].clientY;
+                        const diffX = currentX - startX;
+                        const diffY = currentY - startY;
+
+                        if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 10) {
+                            isSwiping = true;
+                            imgContainer.style.transform = `translateX(${diffX}px)`;
+                            e.preventDefault();
+                        } else if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > 10) {
+                            imgContainer.style.transform = initialTransform;
+                            isSwiping = false;
+                        }
+                    });
+
+                    imgContainer.addEventListener('touchend', async (e) => {
+                        const endX = e.changedTouches[0].clientX;
+                        const swipeDistance = endX - startX;
+                        const swipeThreshold = 80;
+
+                        if (isSwiping) {
+                            imgContainer.style.transition = 'transform 0.2s ease-out';
+
+                            if (swipeDistance > swipeThreshold) {
+                                displayFloatingMessage('Uploading...', 'darkgreen');
+                                imgContainer.style.transform = `translateX(${imgContainer.offsetWidth + 50}px)`;
+                                setTimeout(async () => {
+                                    await uploadIndividualImage(index);
+                                    imgContainer.style.transform = initialTransform;
+                                }, 300);
+                            } else if (swipeDistance < -swipeThreshold) {
+                                displayFloatingMessage('Deleting...', 'red');
+                                imgContainer.style.transform = `translateX(-${imgContainer.offsetWidth + 50}px)`;
+                                setTimeout(async () => {
+                                    await deleteImage(index);
+                                    imgContainer.style.transform = initialTransform;
+                                }, 300);
+                            } else {
+                                imgContainer.style.transform = initialTransform;
+                            }
+                        } else {
+                            imgContainer.style.transform = initialTransform;
+                        }
+                        isSwiping = false;
+                    });
+
+                    gallery.appendChild(imgContainer);
+                });
+                submitAllButton.disabled = false;
+                clearSavedButton.disabled = false;
+            }
+        }
+
+        // --- Delete Individual Image from Gallery ---
+        async function deleteImage(index) {
+            if (!confirm("Are you sure you want to delete this photo from saved?")) {
+                const item = gallery.querySelector(`[data-index="${index}"]`);
+                if (item) item.style.transform = `translateX(0px)`;
+                displayFloatingMessage("Deletion cancelled.", "orange");
+                return;
+            }
+
+            let images = getCapturedImages();
+            if (index > -1 && index < images.length) {
+                images.splice(index, 1);
+                saveCapturedImages(images);
+                displayFloatingMessage("Photo deleted successfully.", "darkgreen");
+                loadGallery();
+            } else {
+                displayFloatingMessage("Error: Photo not found.", "red");
+            }
+        }
+
+        // --- Upload Individual Image from Gallery ---
+        async function uploadIndividualImage(index) {
+            const images = getCapturedImages();
+            if (index < 0 || index >= images.length) {
+                displayFloatingMessage("Error: Photo not found for upload.", "red");
+                return;
+            }
+
+            const imgObj = images[index];
+            const base64Data = imgObj.imageData.split(',')[1];
+
+            let filenamePrefix = imgObj.filenameText ? imgObj.filenameText.trim() : '';
+            if (!filenamePrefix) {
+                filenamePrefix = speciesInput.value.trim();
+            }
+            if (!filenamePrefix) {
+                filenamePrefix = 'unidentified_species';
+            }
+            filenamePrefix = filenamePrefix.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '');
+
+            const dateObj = imgObj.timestamp ? new Date(imgObj.timestamp) : new Date();
+            const datePart = getFormattedDateDDMMYYYY(dateObj);
+
+            let coordPart = '';
+            if (imgObj.latitude !== null && imgObj.longitude !== null) {
+                const cleanLat = String(imgObj.latitude).replace(/[^0-9.-]/g, '');
+                const cleanLon = String(imgObj.longitude).replace(/[^0-9.-]/g, '');
+                coordPart = `_Lat${cleanLat}_Lon${cleanLon}`;
+            }
+
+            const newFileName = `${filenamePrefix}_${datePart}${coordPart}.jpeg`;
+
+            displayStatus(`Uploading photo: '${newFileName}'...`, 'darkgreen');
+
+            submitAllButton.disabled = true;
+            clearSavedButton.disabled = true;
+            captureButton.disabled = true;
+            fileInput.disabled = true;
+            document.querySelectorAll('.filename-input, .identify-item-btn').forEach(input => input.disabled = true);
+
+            try {
+                const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: new URLSearchParams({
+                        image: base64Data,
+                        mimetype: 'image/jpeg',
+                        filename: newFileName
+                    })
+                });
+
+                const result = await response.json();
+                if (result.status === "success") {
+                    displayFloatingMessage(`Photo '${newFileName}' uploaded successfully!`, 'darkgreen');
+                    let updatedImages = getCapturedImages();
+                    updatedImages.splice(index, 1);
+                    saveCapturedImages(updatedImages);
+                    loadGallery();
+                } else {
+                    displayFloatingMessage(`Failed to upload '${newFileName}': ${result.message || 'Unknown error'}`, 'red');
+                }
+            } catch (error) {
+                displayFloatingMessage(`Network error uploading '${newFileName}': ${error.message}`, 'red');
+            } finally {
+                if (currentCameraStream) {
+                    captureButton.disabled = false;
+                }
+                fileInput.disabled = false;
+                loadGallery();
+            }
+        }
+
+        // --- Upload All Saved Images from Gallery ---
+        submitAllButton.onclick = async () => {
+            const imagesToUpload = getCapturedImages();
+            if (imagesToUpload.length === 0) {
+                displayFloatingMessage("No photos to upload.", 'orange');
+                return;
+            }
+
+            submitAllButton.disabled = true;
+            clearSavedButton.disabled = true;
+            captureButton.disabled = true;
+            fileInput.disabled = true;
+            document.querySelectorAll('.filename-input, .identify-item-btn').forEach(input => input.disabled = true);
+
+            displayStatus(`Uploading ${imagesToUpload.length} photo(s)...`, 'darkgreen');
+
+            let successfulUploads = 0;
+            let failedUploads = 0;
+            const uploadedImageIndices = new Set();
+
+            for (let i = 0; i < imagesToUpload.length; i++) {
+                const imgObj = imagesToUpload[i];
+                const base64Data = imgObj.imageData.split(',')[1];
+
+                let filenamePrefix = imgObj.filenameText ? imgObj.filenameText.trim() : '';
+                if (!filenamePrefix) {
+                    filenamePrefix = speciesInput.value.trim();
+                }
+                if (!filenamePrefix) {
+                    filenamePrefix = 'unidentified_species';
+                }
+                filenamePrefix = filenamePrefix.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '');
+
+                const dateObj = imgObj.timestamp ? new Date(imgObj.timestamp) : new Date();
+                const datePart = getFormattedDateDDMMYYYY(dateObj);
+
+                let coordPart = '';
+                if (imgObj.latitude !== null && imgObj.longitude !== null) {
+                    const cleanLat = String(imgObj.latitude).replace(/[^0-9.-]/g, '');
+                    const cleanLon = String(imgObj.longitude).replace(/[^0-9.-]/g, '');
+                    coordPart = `_Lat${cleanLat}_Lon${cleanLon}`;
+                }
+
+                const newFileName = `${filenamePrefix}_${datePart}${coordPart}.jpeg`;
+
+                try {
+                    displayStatus(`Uploading photo ${i + 1}/${imagesToUpload.length}: '${newFileName}'...`, 'darkgreen');
+                    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: new URLSearchParams({
+                            image: base64Data,
+                            mimetype: 'image/jpeg',
+                            filename: newFileName
+                        })
+                    });
+
+                    const result = await response.json();
+                    if (result.status === "success") {
+                        successfulUploads++;
+                        uploadedImageIndices.add(i);
+                        console.log(`Uploaded: ${newFileName}, URL: ${result.url}`);
+                    } else {
+                        failedUploads++;
+                        console.error(`Failed to upload ${newFileName}: ${result.message || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    failedUploads++;
+                    console.error(`Network error uploading ${newFileName}: ${error.message}`);
+                }
+            }
+
+            let remainingImages = getCapturedImages();
+            const sortedIndices = Array.from(uploadedImageIndices).sort((a, b) => b - a);
+            for (const index of sortedIndices) {
+                remainingImages.splice(index, 1);
+            }
+            saveCapturedImages(remainingImages);
+            loadGallery();
+
+            let finalMessage = "";
+            if (successfulUploads > 0 && failedUploads === 0) {
+                finalMessage = `All ${successfulUploads} photos uploaded successfully!`;
+                displayFloatingMessage(finalMessage, 'darkgreen');
+            } else if (successfulUploads > 0 && failedUploads > 0) {
+                finalMessage = `${successfulUploads} photos uploaded, ${failedUploads} failed.`;
+                displayFloatingMessage(finalMessage, 'orange');
+            } else {
+                finalMessage = `All ${failedUploads} uploads failed.`;
+                displayFloatingMessage(finalMessage, 'red');
+            }
+            displayStatus(finalMessage, successfulUploads > 0 ? 'darkgreen' : 'red');
+
+            if (currentCameraStream) {
+                captureButton.disabled = false;
+            }
+            fileInput.disabled = false;
+        };
+
+        // --- Clear All Saved Images ---
+        clearSavedButton.onclick = () => {
+            if (confirm("Are you sure you want to clear all saved photos? This cannot be undone.")) {
+                localStorage.removeItem('capturedImages');
+                localStorage.removeItem('lastKnownLocation');
+                loadGallery();
+                displayFloatingMessage("All saved photos cleared.", 'orange');
+            }
+        };
+
+        // --- Add New Entry (resets main input area) ---
+        addNewEntryButton.onclick = () => {
+            speciesInput.value = '';
+            resultsDiv.innerHTML = ''; // Clear main results area
+            if (currentCameraStream) {
+                stopCamera(currentCameraStream);
+            }
+            liveCamera.srcObject = null;
+            startCamera();
+            fileInput.value = '';
+            displayStatus("Ready for a new species entry!", 'darkgreen');
+        };
+
+        /**
+         * Identifies species in the provided image data or from the current camera/file input.
+         * Results are displayed in the specified target container.
+         * @param {string} [imageDataUrl=null] - Optional base64 data URL of an image to classify.
+         * @param {HTMLElement} [targetResultsContainer=null] - The HTML element to display results in (e.g., a div below a gallery item).
+         * @param {HTMLInputElement} [targetSpeciesInput=null] - The input field to update when a prediction is accepted.
+         */
+        async function identifySpecies(imageDataUrl = null, targetResultsContainer = null, targetSpeciesInput = null) {
+            const model = await mobilenet.load();
+            const displayTarget = targetResultsContainer || resultsDiv; // Use the specific container or main results div
+            displayTarget.innerHTML = ''; // Clear previous results
+            displayTarget.style.display = 'block'; // Ensure container is visible
+
+            displayStatus("Loading AI model and predicting...", 'darkgreen');
+
+            let imgForPrediction = null;
+
+            if (imageDataUrl) {
+                imgForPrediction = document.createElement('img');
+                imgForPrediction.src = imageDataUrl;
+            } else if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                imgForPrediction = document.createElement('img');
+                imgForPrediction.src = await new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = e => resolve(e.target.result);
+                    reader.readAsDataURL(file);
+                });
+            } else if (liveCamera.srcObject && liveCamera.videoWidth > 0 && liveCamera.videoHeight > 0) {
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = liveCamera.videoWidth;
+                tempCanvas.height = liveCamera.videoHeight;
+                tempCanvas.getContext('2d').drawImage(liveCamera, 0, 0, tempCanvas.width, tempCanvas.height);
+                imgForPrediction = document.createElement('img');
+                imgForPrediction.src = tempCanvas.toDataURL('image/jpeg');
+            } else {
+                displayFloatingMessage("Please capture an image or select a file for AI prediction.", "red");
+                displayStatus("No image available for AI prediction.", 'red');
+                return;
+            }
+
+            try {
+                await imgForPrediction.decode();
+                const predictions = await model.classify(imgForPrediction);
+
+                const ul = document.createElement('ul');
+                displayTarget.appendChild(document.createElement('h3')).textContent = 'AI PREDICTION:';
+                displayTarget.appendChild(ul);
+
+                predictions.forEach(prediction => {
+                    const listItem = document.createElement('li');
+                    
+                    const predictionTextSpan = document.createElement('span');
+                    predictionTextSpan.className = 'prediction-text';
+                    predictionTextSpan.innerHTML = `<strong>${prediction.className}</strong> - ${(prediction.probability * 100).toFixed(2)}%`;
+                    
+                    const actionButtonsDiv = document.createElement('div');
+                    actionButtonsDiv.className = 'prediction-actions';
+
+                    const tickBtn = document.createElement('button');
+                    tickBtn.className = 'prediction-action-btn tick';
+                    tickBtn.textContent = '✔️'; // Unicode checkmark
+                    tickBtn.title = `Use "${prediction.className}"`;
+                    tickBtn.onclick = (e) => {
+                        e.stopPropagation(); // Prevent li click
+                        if (targetSpeciesInput) {
+                            targetSpeciesInput.value = prediction.className;
+                            displayFloatingMessage(`'${prediction.className}' inserted!`, 'darkgreen');
+                            // Optionally, hide predictions after selection
+                            // displayTarget.style.display = 'none';
+                        }
+                    };
+
+                    const crossBtn = document.createElement('button');
+                    crossBtn.className = 'prediction-action-btn cross';
+                    crossBtn.textContent = '❌'; // Unicode cross mark
+                    crossBtn.title = `Dismiss "${prediction.className}"`;
+                    crossBtn.onclick = (e) => {
+                        e.stopPropagation(); // Prevent li click
+                        listItem.remove(); // Remove this prediction item
+                        if (ul.children.length === 0) {
+                             displayTarget.style.display = 'none'; // Hide container if no predictions left
+                        }
+                    };
+
+                    actionButtonsDiv.appendChild(tickBtn);
+                    actionButtonsDiv.appendChild(crossBtn);
+
+                    listItem.appendChild(predictionTextSpan);
+                    listItem.appendChild(actionButtonsDiv);
+
+                    // Add click listener for the pop-up
+                    listItem.onclick = () => displayPredictionPopup(prediction.className);
+
+                    ul.appendChild(listItem);
+                });
+                displayStatus("AI prediction complete!", 'darkgreen');
+            } catch (error) {
+                displayTarget.innerHTML = '<p style="color: red; text-align: center;">AI prediction failed.</p>';
+                displayStatus("AI prediction failed.", 'red');
+                console.error('AI prediction error:', error);
+            }
+        }
+
+        // --- Draggable Prediction Pop-up Logic ---
+        let isDragging = false;
+        let offset = { x: 0, y: 0 };
+
+        popupHeader.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            offset = {
+                x: predictionPopup.offsetLeft - e.clientX,
+                y: predictionPopup.offsetTop - e.clientY
+            };
+            predictionPopup.style.cursor = 'grabbing';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            predictionPopup.style.left = (e.clientX + offset.x) + 'px';
+            predictionPopup.style.top = (e.clientY + offset.y) + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            predictionPopup.style.cursor = 'grab';
+        });
+
+        popupCloseBtn.onclick = () => {
+            predictionPopup.style.display = 'none';
+        };
+
+        // --- Display Prediction Pop-up (with placeholder content) ---
+        async function displayPredictionPopup(speciesName) {
+            popupTitle.textContent = speciesName;
+            popupImage.src = ''; // Clear previous image
+            popupDescription.textContent = 'Loading description...'; // Placeholder
+
+            predictionPopup.style.display = 'flex'; // Show pop-up
+
+            displayStatus(`Fetching info for ${speciesName}...`, 'darkgreen');
+
+            try {
+                // Use Google Search for image and description. This is a placeholder and has limitations.
+                // A robust solution would use a dedicated API (e.g., Wikipedia, specific biodiversity APIs).
+                const searchQuery = `${speciesName} species`;
+                const imageResult = await Google Search(queries=[`${searchQuery} image`]);
+                const descriptionResult = await Google Search(queries=[`${searchQuery} description`]);
+
+                let imageUrl = '';
+                let descriptionText = 'No detailed description available.';
+
+                if (imageResult && imageResult.results && imageResult.results.length > 0) {
+                    // Try to find a direct image URL
+                    const firstImage = imageResult.results.find(res => res.url && (res.url.endsWith('.jpg') || res.url.endsWith('.png') || res.url.endsWith('.jpeg')));
+                    if (firstImage) {
+                         imageUrl = firstImage.url;
+                    } else if (imageResult.results[0].url) {
+                        // Fallback to the first URL, might not be an image
+                        imageUrl = imageResult.results[0].url;
+                    }
+                }
+
+                if (descriptionResult && descriptionResult.results && descriptionResult.results.length > 0) {
+                    // Try to extract a concise description from the first result's snippet
+                    descriptionText = descriptionResult.results[0].snippet || 'No detailed description available.';
+                }
+
+                popupImage.src = imageUrl || 'https://via.placeholder.com/200x150?text=Image+Not+Found'; // Placeholder if no image found
+                popupDescription.textContent = descriptionText;
+                displayStatus(`Info for ${speciesName} loaded!`, 'darkgreen');
+
+            } catch (error) {
+                console.error("Error fetching prediction details:", error);
+                popupDescription.textContent = 'Failed to load details. Network error or API issue.';
+                popupImage.src = 'https://via.placeholder.com/200x150?text=Error';
+                displayStatus("Failed to load prediction details.", 'red');
+            }
+        }
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            captureButton.disabled = true;
+            submitAllButton.disabled = true;
+            clearSavedButton.disabled = true;
+            startCamera();
+            loadGallery();
+        });
+    </script>
+</body>
+</html>
